@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 日志
+*.log
+logs/
+
+# 环境变量
+.env
+.env.local
+
+# 测试
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 系统
+.DS_Store
+Thumbs.db

@@ -1,0 +1,22 @@
+[Unit]
+Description=Agent Helper Linux Client
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/agent_helper
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONIOENCODING=utf-8
+ExecStart=/usr/bin/python3 /opt/agent_helper/agent_helper.py
+Restart=always
+RestartSec=5
+StartLimitInterval=60s
+StartLimitBurst=3
+StandardOutput=append:/var/log/agent_helper/agent_helper.log
+StandardError=append:/var/log/agent_helper/agent_helper.log
+
+[Install]
+WantedBy=multi-user.target

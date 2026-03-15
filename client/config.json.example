@@ -1,0 +1,7 @@
+{
+  "device_id": "",
+  "token": "YOUR_LINUX_DEVICE_TOKEN",
+  "server_url": "wss://your-server.com/ws/linux",
+  "reconnect_interval": 5,
+  "heartbeat_interval": 30
+}

@@ -118,15 +118,27 @@ class Executor:
         """获取系统信息"""
         try:
             uname = platform.uname()
+            system = platform.system()
             
             # 内存信息
             mem_info = {}
-            if platform.system() == "Windows":
+            if system == "Windows":
                 import ctypes
-                mem = ctypes.Structure()
-                # 简化处理
                 mem_info["note"] = "Windows memory info not implemented"
-            else:
+            elif system == "Darwin":  # macOS
+                try:
+                    import subprocess
+                    result = subprocess.run(
+                        ["sysctl", "-n", "hw.memsize"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+                    mem_bytes = int(result.stdout.strip())
+                    mem_info["total"] = f"{mem_bytes // 1024} kB"
+                except:
+                    pass
+            else:  # Linux
                 try:
                     with open("/proc/meminfo", "r") as f:
                         for line in f:

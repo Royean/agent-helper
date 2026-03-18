@@ -167,7 +167,7 @@ class AgentLinkerApp:
         timestamp = time.strftime("%H:%M:%S")
         log_line = f"[{timestamp}] {message}\n"
         
-        if self.log_text:
+        if hasattr(self, 'log_text') and self.log_text:
             self.log_text.insert("end", log_line)
             self.log_text.see("end")
         else:

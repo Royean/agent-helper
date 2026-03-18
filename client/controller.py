@@ -1,6 +1,6 @@
 """
 AgentLinker Controller Client
-主控端客户端 - 支持一对多控制
+主控端客户端 - 支持一对多控制、批量执行、设备分组
 """
 
 import asyncio
@@ -10,10 +10,16 @@ import platform
 import sys
 import time
 import uuid
-from typing import Dict, Optional
+from typing import Dict, Optional, List
+from pathlib import Path
 
 import websockets
 from websockets.exceptions import ConnectionClosed
+
+# 导入批量执行和分组模块
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'core'))
+from batch_executor import BatchExecutor, DeviceGroup, DeviceStatus
+from file_transfer import FileTransfer
 
 
 class ControllerClient:
@@ -26,6 +32,19 @@ class ControllerClient:
         self.controller_id: str = f"controller-{uuid.uuid4().hex[:8]}"
         self.connected_devices: Dict[str, dict] = {}  # device_id -> info
         self.pending_requests: Dict[str, asyncio.Future] = {}
+        
+        # 批量执行和设备分组
+        self.batch_executor = BatchExecutor(self.send_command)
+        self.device_group = DeviceGroup()
+        
+        # 命令历史
+        self.command_history: List[dict] = []
+        self.max_history = 100
+        self.favorite_commands: List[dict] = []
+        
+        # 配置文件
+        self.config_file = Path.home() / ".agentlinker" / "controller_config.json"
+        self._load_controller_config()
     
     async def connect(self):
         """建立 WebSocket 连接"""
@@ -202,18 +221,37 @@ class ControllerClient:
     
     async def run_interactive(self):
         """运行交互式命令行"""
-        print("\n" + "=" * 50)
-        print("AgentLinker 主控端")
-        print("=" * 50)
-        print("\n可用命令:")
-        print("  pair <device_id> <pairing_key>  - 配对设备")
-        print("  unpair <device_id>              - 解除配对")
-        print("  list                            - 列出已配对设备")
-        print("  scan                            - 扫描在线设备")
-        print("  exec <device_id> <command>      - 执行命令")
-        print("  info <device_id>                - 获取设备信息")
-        print("  quit                            - 退出")
-        print("=" * 50 + "\n")
+        print("\n" + "=" * 60)
+        print("AgentLinker 主控端 v2.2.0")
+        print("=" * 60)
+        print("\n📋 基本命令:")
+        print("  pair <device_id> <key>    - 配对设备")
+        print("  unpair <device_id>        - 解除配对")
+        print("  list                      - 列出已配对设备")
+        print("  scan                      - 扫描在线设备")
+        print("  exec <device_id> <cmd>    - 执行命令")
+        print("  info <device_id>          - 获取设备信息")
+        print("\n🎯 批量操作 (v2.2.0 新增):")
+        print("  batch <group_id> <cmd>    - 批量执行命令")
+        print("  batch-all <cmd>           - 向所有设备执行命令")
+        print("  batch-result              - 查看批量执行结果摘要")
+        print("\n📁 设备分组 (v2.2.0 新增):")
+        print("  group-create <id> <name>  - 创建分组")
+        print("  group-list                - 列出分组")
+        print("  group-add <device> <group>- 添加设备到分组")
+        print("  group-devices <group>     - 列出分组设备")
+        print("\n💾 文件传输 (v2.2.0 新增):")
+        print("  upload <device> <local> <remote> - 上传文件")
+        print("  download <device> <remote> <local> - 下载文件")
+        print("  file-info <device> <path> - 查看文件信息")
+        print("\n📜 命令历史:")
+        print("  history                   - 查看命令历史")
+        print("  favorite <cmd>            - 收藏命令")
+        print("  favorites                 - 列出收藏命令")
+        print("\n其他:")
+        print("  help                      - 显示帮助")
+        print("  quit                      - 退出")
+        print("=" * 60 + "\n")
         
         # 启动消息处理任务
         message_task = asyncio.create_task(self.handle_messages())

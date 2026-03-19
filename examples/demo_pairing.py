@@ -10,7 +10,6 @@ import time
 from pathlib import Path
 
 # 添加模块路径
-sys.path.insert(0, str(Path(__file__).parent / "client"))
 sys.path.insert(0, str(Path(__file__).parent / "client" / "utils"))
 
 from discovery import LANDiscovery, QRCodePairing, DiscoveredDevice

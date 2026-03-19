@@ -37,6 +37,11 @@ TLS_KEY_FILE = "/opt/agentlinker/server/key.pem"
 AUDIT_LOG_ENABLED = True
 AUDIT_LOG_FILE = "/var/log/agentlinker/audit.log"
 
+# 文件传输配置
+UPLOAD_DIR = "/tmp/agentlinker_uploads"
+MAX_FILE_SIZE = 10 * 1024 * 1024 * 1024  # 10GB
+CHUNK_SIZE = 1024 * 1024  # 1MB
+
 # ============== 数据模型 ==============
 
 class DeviceInfo(BaseModel):
@@ -82,6 +87,9 @@ pairing_keys: Dict[str, dict] = {}
 
 # 审计日志
 audit_logs: list = []
+
+# 文件传输状态
+active_uploads: Dict[str, dict] = {}  # file_id -> upload info
 
 
 # ============== 工具函数 ==============
@@ -529,6 +537,156 @@ async def handle_controller_messages(controller_id: str):
                     })
                     if req_id in device_info.pending_requests:
                         del device_info.pending_requests[req_id]
+            
+            # ========== 文件传输消息处理 ==========
+            
+            elif msg_type == "file_upload_request":
+                # 控制器请求上传文件到设备
+                device_id = data.get("device_id")
+                file_id = data.get("file_id")
+                filename = data.get("filename")
+                
+                if device_id not in connected_devices:
+                    await controller_info.websocket.send_json({
+                        "type": "error",
+                        "msg": f"Device {device_id} not connected"
+                    })
+                    continue
+                
+                device_info = connected_devices[device_id]
+                
+                if controller_id not in device_info.paired_controllers:
+                    await controller_info.websocket.send_json({
+                        "type": "error",
+                        "msg": "Not paired with this device"
+                    })
+                    continue
+                
+                # 初始化上传状态
+                active_uploads[file_id] = {
+                    "controller_id": controller_id,
+                    "device_id": device_id,
+                    "filename": filename,
+                    "chunks": {},
+                    "chunk_count": 0,
+                    "start_time": time.time(),
+                    "status": "uploading"
+                }
+                
+                # 通知设备准备接收
+                await device_info.websocket.send_json({
+                    "type": "file_incoming",
+                    "file_id": file_id,
+                    "filename": filename,
+                    "controller_id": controller_id
+                })
+                
+                # 确认上传请求
+                await controller_info.websocket.send_json({
+                    "type": "file_upload_accepted",
+                    "file_id": file_id,
+                    "msg": "开始上传"
+                })
+                
+                log_audit("file_upload_start", "controller", controller_id, "success",
+                         target_type="device", target_id=device_id,
+                         details={"file_id": file_id, "filename": filename})
+            
+            elif msg_type == "file_transfer_chunk":
+                # 接收文件分块
+                file_id = data.get("file_id")
+                chunk_index = data.get("chunk_index")
+                chunk_data = data.get("data")
+                
+                if file_id not in active_uploads:
+                    continue
+                
+                upload_info = active_uploads[file_id]
+                upload_info["chunks"][chunk_index] = chunk_data
+                upload_info["chunk_count"] += 1
+                
+                # 可选：定期发送进度
+                if upload_info["chunk_count"] % 10 == 0:
+                    controller_id = upload_info["controller_id"]
+                    if controller_id in connected_controllers:
+                        await connected_controllers[controller_id].websocket.send_json({
+                            "type": "file_transfer_progress",
+                            "file_id": file_id,
+                            "chunks_received": upload_info["chunk_count"]
+                        })
+            
+            elif msg_type == "file_transfer_complete":
+                # 文件传输完成
+                file_id = data.get("file_id")
+                file_hash = data.get("file_hash")
+                
+                if file_id not in active_uploads:
+                    continue
+                
+                upload_info = active_uploads[file_id]
+                device_id = upload_info["device_id"]
+                controller_id = upload_info["controller_id"]
+                
+                # 重组文件
+                try:
+                    upload_dir = Path(UPLOAD_DIR) / device_id
+                    upload_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    save_path = upload_dir / upload_info["filename"]
+                    
+                    # 按顺序写入分块
+                    with open(save_path, "wb") as f:
+                        for i in range(len(upload_info["chunks"])):
+                            chunk_b64 = upload_info["chunks"][i]
+                            import base64
+                            chunk_data = base64.b64decode(chunk_b64)
+                            f.write(chunk_data)
+                    
+                    # 验证哈希
+                    import hashlib
+                    sha256 = hashlib.sha256()
+                    with open(save_path, "rb") as f:
+                        while True:
+                            data = f.read(65536)
+                            if not data:
+                                break
+                            sha256.update(data)
+                    received_hash = sha256.hexdigest()
+                    
+                    if received_hash != file_hash:
+                        raise ValueError("Hash mismatch")
+                    
+                    # 清理内存
+                    del active_uploads[file_id]
+                    
+                    duration = time.time() - upload_info["start_time"]
+                    file_size = save_path.stat().st_size
+                    speed = file_size / duration if duration > 0 else 0
+                    
+                    # 通知控制器完成
+                    if controller_id in connected_controllers:
+                        await connected_controllers[controller_id].websocket.send_json({
+                            "type": "file_transfer_complete",
+                            "file_id": file_id,
+                            "success": True,
+                            "file_path": str(save_path),
+                            "file_size": file_size,
+                            "duration": duration,
+                            "speed": speed
+                        })
+                    
+                    log_audit("file_upload_complete", "controller", controller_id, "success",
+                             target_type="device", target_id=device_id,
+                             details={"file_id": file_id, "size": file_size})
+                    
+                except Exception as e:
+                    if controller_id in connected_controllers:
+                        await connected_controllers[controller_id].websocket.send_json({
+                            "type": "file_transfer_complete",
+                            "file_id": file_id,
+                            "success": False,
+                            "error": str(e)
+                        })
         
         except Exception as e:
             print(f"处理控制器消息错误 {controller_id}: {e}")

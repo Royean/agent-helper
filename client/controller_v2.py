@@ -1,6 +1,6 @@
 """
 AgentLinker Controller Client v2
-主控端客户端 - 支持一对多控制、局域网发现、二维码配对
+主控端客户端 - 支持一对多控制、局域网发现、二维码配对、文件传输
 """
 
 import asyncio
@@ -25,6 +25,16 @@ except ImportError:
     LANDiscovery = None
     QRCodePairing = None
 
+# 导入文件传输模块
+try:
+    from .file_transfer import FileTransfer
+except ImportError:
+    try:
+        from file_transfer import FileTransfer
+    except ImportError:
+        print("⚠️ 文件传输模块未找到")
+        FileTransfer = None
+
 
 class ControllerClient:
     """主控端客户端 - 可以控制多个设备"""
@@ -38,11 +48,15 @@ class ControllerClient:
         self.pending_requests: Dict[str, asyncio.Future] = {}
         self.discovery: Optional[LANDiscovery] = None
         self.qr: Optional[QRCodePairing] = None
+        self.file_transfer: Optional[FileTransfer] = None
+        self.active_transfers: Dict[str, dict] = {}  # 活跃的传输任务
         
         if LANDiscovery:
             self.discovery = LANDiscovery()
         if QRCodePairing:
             self.qr = QRCodePairing()
+        if FileTransfer:
+            self.file_transfer = FileTransfer()
     
     async def connect(self):
         """建立 WebSocket 连接"""
@@ -478,6 +492,167 @@ class ControllerClient:
             asyncio.create_task(self.ws.close())
         if self.discovery:
             self.discovery.stop()
+    
+    # ========== 文件传输方法 ==========
+    
+    async def upload_file(
+        self,
+        device_id: str,
+        local_path: str,
+        remote_path: Optional[str] = None,
+        progress_callback: Optional[callable] = None
+    ) -> dict:
+        """
+        上传文件到设备
+        
+        Args:
+            device_id: 目标设备 ID
+            local_path: 本地文件路径
+            remote_path: 远程保存路径（可选）
+            progress_callback: 进度回调函数
+        
+        Returns:
+            传输结果
+        """
+        if not self.file_transfer:
+            return {"success": False, "error": "文件传输模块未初始化"}
+        
+        if device_id not in self.connected_devices:
+            return {"success": False, "error": f"设备 {device_id} 未连接"}
+        
+        # 生成文件 ID
+        file_id = f"{Path(local_path).name}_{int(time.time())}"
+        
+        # 发送文件传输请求
+        await self.ws.send(json.dumps({
+            "type": "file_upload_request",
+            "file_id": file_id,
+            "device_id": device_id,
+            "filename": Path(local_path).name,
+            "remote_path": remote_path
+        }))
+        
+        # 等待确认
+        response = await asyncio.wait_for(self.ws.recv(), timeout=10)
+        resp_data = json.loads(response)
+        
+        if resp_data.get("type") != "file_upload_accepted":
+            return {"success": False, "error": resp_data.get("msg", "上传请求被拒绝")}
+        
+        # 开始传输
+        print(f"📤 开始上传：{Path(local_path).name}")
+        
+        async def send_chunk(data):
+            await self.ws.send(json.dumps(data))
+        
+        result = await self.file_transfer.upload_file(
+            file_path=local_path,
+            send_callback=send_chunk,
+            progress_callback=progress_callback
+        )
+        
+        if result.get("success"):
+            print(f"✅ 上传完成：{result.get('filename')}")
+            print(f"   大小：{result.get('file_size')} bytes")
+            print(f"   耗时：{result.get('duration'):.2f}s")
+            print(f"   速度：{result.get('speed', 0)/1024:.1f} KB/s")
+        
+        return result
+    
+    async def download_file(
+        self,
+        device_id: str,
+        remote_path: str,
+        local_path: str,
+        progress_callback: Optional[callable] = None
+    ) -> dict:
+        """
+        从设备下载文件
+        
+        Args:
+            device_id: 目标设备 ID
+            remote_path: 远程文件路径
+            local_path: 本地保存路径
+            progress_callback: 进度回调函数
+        
+        Returns:
+            传输结果
+        """
+        if not self.file_transfer:
+            return {"success": False, "error": "文件传输模块未初始化"}
+        
+        if device_id not in self.connected_devices:
+            return {"success": False, "error": f"设备 {device_id} 未连接"}
+        
+        # 生成文件 ID
+        file_id = f"download_{int(time.time())}"
+        
+        # 发送下载请求
+        await self.ws.send(json.dumps({
+            "type": "file_download_request",
+            "file_id": file_id,
+            "device_id": device_id,
+            "remote_path": remote_path
+        }))
+        
+        print(f"📥 开始下载：{remote_path}")
+        
+        # 等待接收文件数据
+        # (实际实现需要在消息处理中接收分块)
+        
+        return {"success": False, "error": "下载功能开发中"}
+    
+    async def list_remote_files(
+        self,
+        device_id: str,
+        path: str = "/"
+    ) -> dict:
+        """
+        列出远程设备文件
+        
+        Args:
+            device_id: 目标设备 ID
+            path: 远程路径
+        
+        Returns:
+            文件列表
+        """
+        if device_id not in self.connected_devices:
+            return {"success": False, "error": f"设备 {device_id} 未连接"}
+        
+        req_id = str(uuid.uuid4())
+        future = asyncio.get_event_loop().create_future()
+        self.pending_requests[req_id] = future
+        
+        await self.ws.send(json.dumps({
+            "type": "list_files",
+            "req_id": req_id,
+            "device_id": device_id,
+            "path": path
+        }))
+        
+        try:
+            result = await asyncio.wait_for(future, timeout=30)
+            return result
+        except asyncio.TimeoutError:
+            return {"success": False, "error": "请求超时"}
+        finally:
+            if req_id in self.pending_requests:
+                del self.pending_requests[req_id]
+    
+    def get_transfer_progress(self, file_id: str) -> Optional[dict]:
+        """获取传输进度"""
+        if not self.file_transfer:
+            return None
+        
+        return self.file_transfer.get_progress(file_id)
+    
+    def cancel_transfer(self, file_id: str) -> bool:
+        """取消传输"""
+        if file_id in self.active_transfers:
+            self.active_transfers[file_id]["cancelled"] = True
+            return True
+        return False
 
 
 async def main():

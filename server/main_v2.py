@@ -44,24 +44,30 @@ CHUNK_SIZE = 1024 * 1024  # 1MB
 
 # ============== 数据模型 ==============
 
-class DeviceInfo(BaseModel):
-    device_id: str
-    device_name: str
-    platform: str
-    connected_at: float
-    last_ping: float
-    websocket: Optional[WebSocket] = None
-    pending_requests: Dict[str, asyncio.Future] = {}
-    paired_controllers: Set[str] = set()
+class DeviceInfo:
+    """设备信息类（不使用 Pydantic）"""
+    def __init__(self, device_id: str, device_name: str, platform: str, 
+                 connected_at: float, last_ping: float, websocket=None):
+        self.device_id = device_id
+        self.device_name = device_name
+        self.platform = platform
+        self.connected_at = connected_at
+        self.last_ping = last_ping
+        self.websocket = websocket
+        self.pending_requests: Dict[str, asyncio.Future] = {}
+        self.paired_controllers: Set[str] = set()
 
 
-class ControllerInfo(BaseModel):
-    controller_id: str
-    platform: str
-    connected_at: float
-    last_ping: float
-    websocket: Optional[WebSocket] = None
-    paired_devices: Set[str] = set()
+class ControllerInfo:
+    """控制器信息类（不使用 Pydantic）"""
+    def __init__(self, controller_id: str, platform: str, 
+                 connected_at: float, last_ping: float, websocket=None):
+        self.controller_id = controller_id
+        self.platform = platform
+        self.connected_at = connected_at
+        self.last_ping = last_ping
+        self.websocket = websocket
+        self.paired_devices: Set[str] = set()
 
 
 class AuditLogEntry(BaseModel):
@@ -705,18 +711,16 @@ def main():
     # 创建日志目录
     Path("/var/log/agentlinker").mkdir(parents=True, exist_ok=True)
     
-    # SSL 上下文
-    ssl_context = None
-    if TLS_ENABLED:
-        ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        ssl_context.load_cert_chain(TLS_CERT_FILE, TLS_KEY_FILE)
+    print(f"🚀 AgentLinker Server v2.1.0")
+    print(f"   监听地址：0.0.0.0:8080")
+    print(f"   TLS: {'启用' if TLS_ENABLED else '禁用'}")
+    print(f"   审计日志：{'启用' if AUDIT_LOG_ENABLED else '禁用'}")
     
     # 启动服务器
     uvicorn.run(
         app,
         host="0.0.0.0",
         port=8080,
-        ssl=ssl_context,
         log_level="info"
     )
 

@@ -94,7 +94,7 @@ struct DeviceListView: View {
                             }
                             
                             Button("Copy Pairing Key") {
-                                copyPairingKey(device.pairingKey)
+                                copyPairingKey(device.pairingKey ?? "")
                             }
                             
                             Divider()

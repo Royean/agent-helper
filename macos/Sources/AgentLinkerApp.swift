@@ -15,18 +15,10 @@ struct AgentLinkerApp: App {
         WindowGroup {
             Group {
                 if authManager.isAuthenticated {
-                    ContentView()
+                    ConnectionView()
                         .environmentObject(deviceManager)
                         .environmentObject(webSocketManager)
                         .environmentObject(authManager)
-                        .onAppear {
-                            // Auto-connect on launch if authenticated
-                            webSocketManager.connect(
-                                deviceId: deviceManager.deviceId,
-                                deviceName: deviceManager.deviceName,
-                                token: "ah_device_token_change_in_production"
-                            )
-                        }
                 } else {
                     LoginView()
                         .environmentObject(deviceManager)
@@ -37,7 +29,7 @@ struct AgentLinkerApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
-        
+
         // Menu Bar Extra (optional)
         MenuBarExtra("AgentLinker", systemImage: "desktopcomputer") {
             MenuBarView()

@@ -25,7 +25,7 @@ class AuthManager: ObservableObject {
     
     func login(email: String, password: String) async -> Bool {
         // Simulate login - replace with actual API call
-        await Task.sleep(nanoseconds: 500_000_000) // 500ms delay
+        try? await Task.sleep(nanoseconds: 500_000_000) // 500ms delay
         
         // Validate credentials
         guard !email.isEmpty && !password.isEmpty else {
@@ -73,7 +73,7 @@ class AuthManager: ObservableObject {
     
     func register(email: String, password: String, name: String) async -> Bool {
         // Simulate registration - replace with actual API call
-        await Task.sleep(nanoseconds: 500_000_000)
+        try? await Task.sleep(nanoseconds: 500_000_000)
         
         guard !email.isEmpty && !password.isEmpty && !name.isEmpty else {
             lastError = "All fields are required"

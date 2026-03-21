@@ -196,30 +196,51 @@ async def client_websocket(websocket: WebSocket):
         
         connected_devices[device_id] = device_info
         
+        # 检查是否为自动接受模式
+        auto_accept = msg.get("auto_accept", False)
+        
         await websocket.send_json({
             "type": "registered",
             "device_id": device_id,
             "device_name": device_name,
+            "auto_accept": auto_accept,
             "msg": "Connected successfully"
         })
         
-        print(f"📱 设备上线：{device_id} ({platform})")
+        print(f"📱 设备上线：{device_id} ({platform}), auto_accept={auto_accept}")
         
-        # 生成并发送配对密钥
-        pairing_key = generate_pairing_key()
-        pairing_keys[device_id] = {
-            "key": pairing_key,
-            "expires_at": now + 3600,  # 1 小时过期
-            "created_at": now
-        }
-        
-        await websocket.send_json({
-            "type": "pairing_key",
-            "device_id": device_id,
-            "pairing_key": pairing_key,
-            "msg": f"Your pairing key: {pairing_key}"
-        })
-        print(f"🔑 设备 {device_id} 配对密钥：{pairing_key}")
+        if auto_accept:
+            # 自动配对模式 - 生成特殊配对密钥并立即配对
+            pairing_key = "AUTO_" + generate_pairing_key()
+            pairing_keys[device_id] = {
+                "key": pairing_key,
+                "expires_at": now + 86400,  # 24小时过期
+                "created_at": now,
+                "auto": True
+            }
+            # 通知设备已自动配对
+            await websocket.send_json({
+                "type": "auto_paired",
+                "device_id": device_id,
+                "msg": "Device auto-paired, waiting for controller..."
+            })
+            print(f"🔓 设备 {device_id} 已自动配对")
+        else:
+            # 生成并发送配对密钥（传统模式）
+            pairing_key = generate_pairing_key()
+            pairing_keys[device_id] = {
+                "key": pairing_key,
+                "expires_at": now + 3600,  # 1 小时过期
+                "created_at": now
+            }
+            
+            await websocket.send_json({
+                "type": "pairing_key",
+                "device_id": device_id,
+                "pairing_key": pairing_key,
+                "msg": f"Your pairing key: {pairing_key}"
+            })
+            print(f"🔑 设备 {device_id} 配对密钥：{pairing_key}")
         
         # 通知已配对的控制器
         for ctrl_id in device_info.paired_controllers:
@@ -391,11 +412,14 @@ async def controller_websocket(websocket: WebSocket):
                         continue
                     
                     if pairing_keys[device_id]["key"] != pairing_key:
-                        await websocket.send_json({
-                            "type": "error",
-                            "msg": "Invalid pairing key"
-                        })
-                        continue
+                        # 对于 auto_accept 设备，也接受 AUTO_PAIR 通配符
+                        is_auto = pairing_keys[device_id].get("auto", False)
+                        if not (is_auto and pairing_key == "AUTO_PAIR"):
+                            await websocket.send_json({
+                                "type": "error",
+                                "msg": "Invalid pairing key"
+                            })
+                            continue
                     
                     # 检查设备是否在线
                     if device_id not in connected_devices:

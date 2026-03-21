@@ -33,13 +33,10 @@ struct RegisterView: View {
             VStack(spacing: 16) {
                 TextField("Full Name", text: $name)
                     .textFieldStyle(.roundedBorder)
-                    .autocapitalization(.words)
-                
+
                 TextField("Email", text: $email)
                     .textFieldStyle(.roundedBorder)
-                    .autocapitalization(.none)
                     .disableAutocorrection(true)
-                    .keyboardType(.emailAddress)
                 
                 SecureField("Password", text: $password)
                     .textFieldStyle(.roundedBorder)

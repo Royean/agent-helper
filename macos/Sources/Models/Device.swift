@@ -33,7 +33,7 @@ enum DeviceStatus: String, Codable {
     }
 }
 
-struct Device: Codable, Identifiable, Equatable {
+struct Device: Codable, Identifiable, Equatable, Hashable {
     let id: String
     let name: String
     let type: DeviceType

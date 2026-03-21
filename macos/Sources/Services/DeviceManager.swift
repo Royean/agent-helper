@@ -109,7 +109,7 @@ class ConfigManager {
     
     var serverUrl: String {
         get {
-            defaults.string(forKey: serverUrlKey) ?? "ws://43.98.243.80:8080/ws/client"
+            defaults.string(forKey: serverUrlKey) ?? "ws://127.0.0.1:8080/ws/client"
         }
         set {
             defaults.set(newValue, forKey: serverUrlKey)

@@ -42,9 +42,7 @@ struct LoginView: View {
             VStack(spacing: 16) {
                 TextField("Email", text: $email)
                     .textFieldStyle(.roundedBorder)
-                    .autocapitalization(.none)
                     .disableAutocorrection(true)
-                    .keyboardType(.emailAddress)
                 
                 SecureField("Password", text: $password)
                     .textFieldStyle(.roundedBorder)
@@ -106,20 +104,17 @@ struct LoginView: View {
     
     private func handleLogin() {
         isLoading = true
-        
+
         Task {
             let success = await authManager.login(email: email, password: password)
-            
+
             await MainActor.run {
                 isLoading = false
-                
+
                 if success {
-                    // Auto-connect WebSocket after login
-                    webSocketManager.connect(
-                        deviceId: deviceManager.deviceId,
-                        deviceName: deviceManager.deviceName,
-                        token: "ah_device_token_change_in_production"
-                    )
+                    // 登录成功，但不自动连接
+                    // 用户将在 ConnectionView 中选择连接方式
+                    print("✅ Login successful - waiting for user to choose connection mode")
                 }
             }
         }

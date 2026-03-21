@@ -120,21 +120,21 @@ struct ContentView: View {
                     .font(.headline)
             }
             
-            HStack(spacing: 20) {
+            HStack(spacing: 12) {
                 StatusIndicator(
                     title: "Connection",
                     status: webSocketManager.isConnected ? "Online" : "Offline",
                     icon: "wifi",
                     color: webSocketManager.isConnected ? "green" : "gray"
                 )
-                
+
                 StatusIndicator(
                     title: "Service",
                     status: "Running",
                     icon: "play.circle",
                     color: "green"
                 )
-                
+
                 StatusIndicator(
                     title: "Agent",
                     status: "Ready",
@@ -263,22 +263,25 @@ struct StatusIndicator: View {
     let status: String
     let icon: String
     let color: String
-    
+
     var body: some View {
         VStack(spacing: 8) {
             Image(systemName: icon)
                 .font(.title2)
                 .foregroundColor(Color(color))
-            
+
             Text(status)
                 .font(.caption)
                 .fontWeight(.medium)
-            
+                .lineLimit(1)
+                .frame(width: 80)
+
             Text(title)
                 .font(.caption2)
                 .foregroundColor(.secondary)
+                .lineLimit(1)
         }
-        .frame(maxWidth: .infinity)
+        .frame(width: 100)
     }
 }
 

@@ -96,6 +96,40 @@ EOF
     # 创建 PkgInfo
     echo "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
 
+    # 代码签名
+    echo -e "${BLUE}🔐 签名应用...${NC}"
+
+    # 创建 entitlements 文件
+    ENTITLEMENTS_FILE="$RELEASE_DIR/entitlements.plist"
+    cat > "$ENTITLEMENTS_FILE" << 'ENTEOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <key>com.apple.security.network.server</key>
+    <true/>
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+</dict>
+</plist>
+ENTEOF
+
+    # 使用 ad-hoc 签名（不需要开发者账号）
+    codesign --force --deep --sign - --entitlements "$ENTITLEMENTS_FILE" "$APP_BUNDLE" 2>/dev/null
+
+    if codesign -dv "$APP_BUNDLE" 2>/dev/null | grep -q "Signature=adhoc"; then
+        echo -e "${GREEN}✅ 应用已签名 (ad-hoc)${NC}"
+    else
+        echo -e "${YELLOW}⚠️ 签名可能失败，请手动运行:${NC}"
+        echo "  codesign --force --deep --sign - --entitlements $ENTITLEMENTS_FILE $APP_BUNDLE"
+    fi
+
     echo -e "${GREEN}✅ 原生 SwiftUI 应用构建完成!${NC}"
 else
     echo -e "${BLUE}📦 创建基于 Python 的 .app 包...${NC}"

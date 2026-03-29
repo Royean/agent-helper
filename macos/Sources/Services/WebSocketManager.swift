@@ -33,7 +33,7 @@ class WebSocketManager: ObservableObject {
     private var webSocketTask: URLSessionWebSocketTask?
     private let serverUrl: String
     private var reconnectTimer: Timer?
-    private var heartbeatTimer: Timer?
+    private let heartbeatQueue = DispatchQueue(label: "com.agentlinker.heartbeat", qos: .background)
     private var reconnectAttempts = 0
     private let maxReconnectAttempts = 10
     private let heartbeatInterval: TimeInterval = 30
@@ -76,22 +76,36 @@ class WebSocketManager: ObservableObject {
 
         let session = URLSession(configuration: .default)
         webSocketTask = session.webSocketTask(with: url)
+
+        // 检查 WebSocketTask 状态
+        NSLog("🔗 WebSocketTask created, state: \(webSocketTask?.state.rawValue ?? -1)")
+
         webSocketTask?.resume()
 
+        NSLog("🔗 WebSocketTask resumed, state: \(webSocketTask?.state.rawValue ?? -1)")
         print("🔗 WebSocket task started")
 
-        // 立即发送注册消息
-        isConnected = true
-        switch mode {
-        case .active:
-            registerActive(deviceId: deviceId, deviceName: deviceName, token: token)
-        case .passive:
-            registerPassive(deviceId: deviceId, token: token)
+        // 在主线程设置连接状态
+        DispatchQueue.main.async {
+            self.isConnected = true
         }
 
-        // 开始接收消息
-        receiveMessage()
-        startHeartbeat()
+        // 等待一小段时间让 WebSocket 连接建立
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            guard let self = self else { return }
+            NSLog("🔗 After delay, WebSocketTask state: \(self.webSocketTask?.state.rawValue ?? -1)")
+
+            switch mode {
+            case .active:
+                self.registerActive(deviceId: deviceId, deviceName: deviceName, token: token)
+            case .passive:
+                self.registerPassive(deviceId: deviceId, token: token)
+            }
+
+            // 开始接收消息
+            self.receiveMessage()
+            self.startHeartbeat()
+        }
     }
 
     // MARK: - Passive Listening (Server Initiated)
@@ -176,6 +190,7 @@ class WebSocketManager: ObservableObject {
 
     // MARK: - Registration
     private func registerActive(deviceId: String, deviceName: String, token: String) {
+        NSLog("📤 registerActive() called, WebSocketTask state: \(webSocketTask?.state.rawValue ?? -1)")
         let register: [String: Any] = [
             "type": "register",
             "device_id": deviceId,
@@ -186,6 +201,7 @@ class WebSocketManager: ObservableObject {
             "auto_accept": true
         ]
         print("📤 registerActive() - sending register message")
+        NSLog("📤 Register message: \(register)")
         sendJSON(register)
     }
 
@@ -457,24 +473,34 @@ class WebSocketManager: ObservableObject {
     }
 
     private func sendJSON(_ json: [String: Any]) {
+        NSLog("📤 sendJSON called, WebSocketTask state: \(webSocketTask?.state.rawValue ?? -1)")
         do {
             let data = try JSONSerialization.data(withJSONObject: json)
             if let jsonString = String(data: data, encoding: .utf8) {
                 print("📤 Sending JSON: \(jsonString)")
+                NSLog("📤 JSON content: \(jsonString)")
                 sendString(jsonString)
             }
         } catch {
             print("❌ Failed to send JSON: \(error)")
+            NSLog("❌ JSON serialization error: \(error)")
         }
     }
 
     private func sendString(_ string: String) {
+        NSLog("📤 sendString called, WebSocketTask: \(webSocketTask != nil ? "exists" : "nil"), state: \(webSocketTask?.state.rawValue ?? -1)")
+        guard let task = webSocketTask, task.state == .running else {
+            NSLog("❌ Cannot send - WebSocketTask not running")
+            return
+        }
         let message = URLSessionWebSocketTask.Message.string(string)
-        webSocketTask?.send(message) { error in
+        task.send(message) { error in
             if let error = error {
                 print("❌ Send error: \(error)")
+                NSLog("❌ Send error: \(error)")
             } else {
                 print("📤 Sent successfully")
+                NSLog("📤 Sent successfully")
             }
         }
     }
@@ -510,21 +536,41 @@ class WebSocketManager: ObservableObject {
 
     // MARK: - Heartbeat
     private func startHeartbeat() {
-        heartbeatTimer?.invalidate()
-        heartbeatTimer = Timer.scheduledTimer(withTimeInterval: heartbeatInterval, repeats: true) { [weak self] _ in
-            self?.sendPing()
-        }
+        NSLog("💓 startHeartbeat() called")
+        stopHeartbeat()
+
+        // 立即发送初始心跳
         sendPing()
+
+        // 使用 DispatchQueue 定时发送心跳
+        heartbeatQueue.asyncAfter(deadline: .now() + heartbeatInterval) { [weak self] in
+            self?.heartbeatLoop()
+        }
+    }
+
+    private func heartbeatLoop() {
+        guard webSocketTask != nil, isConnected else {
+            NSLog("💓 Heartbeat loop stopped - not connected")
+            return
+        }
+
+        sendPing()
+
+        // 继续下一次心跳
+        heartbeatQueue.asyncAfter(deadline: .now() + heartbeatInterval) { [weak self] in
+            self?.heartbeatLoop()
+        }
     }
 
     private func stopHeartbeat() {
-        heartbeatTimer?.invalidate()
-        heartbeatTimer = nil
+        NSLog("💓 stopHeartbeat() called")
     }
 
     private func sendPing() {
+        NSLog("💓 sendPing() called, WebSocketTask: \(webSocketTask != nil ? "exists" : "nil")")
         guard webSocketTask != nil else {
             print("💓 Cannot send ping - no connection")
+            NSLog("💓 Cannot send ping - no connection")
             return
         }
 
@@ -539,9 +585,11 @@ class WebSocketManager: ObservableObject {
             if let jsonString = String(data: data, encoding: .utf8) {
                 sendString(jsonString)
                 print("💓 Heartbeat sent")
+                NSLog("💓 Heartbeat message: \(jsonString)")
             }
         } catch {
             print("Failed to send heartbeat: \(error)")
+            NSLog("❌ Heartbeat error: \(error)")
         }
     }
 }
